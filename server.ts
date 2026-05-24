@@ -3,10 +3,12 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
+import fs from "fs";
 
 dotenv.config();
 
 const PORT = 3000;
+const WATCHLIST_PATH = path.join(process.cwd(), "watchlist.json");
 
 // Lazy initialization of Gemini client
 let aiClient: GoogleGenAI | null = null;
@@ -31,6 +33,35 @@ function getGeminiClient(): GoogleGenAI {
 async function startServer() {
   const app = express();
   app.use(express.json());
+
+  // API endpoint for getting and setting the synced watchlist across devices
+  app.get("/api/anime/list", (req, res) => {
+    try {
+      if (fs.existsSync(WATCHLIST_PATH)) {
+        const data = fs.readFileSync(WATCHLIST_PATH, "utf-8");
+        return res.json(JSON.parse(data));
+      } else {
+        return res.json({ initialized: false, list: [] });
+      }
+    } catch (err: any) {
+      console.error("Error reading watchlist from file:", err);
+      res.status(500).json({ error: "Failed to read watchlist from server" });
+    }
+  });
+
+  app.post("/api/anime/list", (req, res) => {
+    try {
+      const { list } = req.body;
+      if (!Array.isArray(list)) {
+        return res.status(400).json({ error: "Invalid dynamic watchlist format" });
+      }
+      fs.writeFileSync(WATCHLIST_PATH, JSON.stringify(list, null, 2), "utf-8");
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("Error writing watchlist to file:", err);
+      res.status(500).json({ error: "Failed to save watchlist to server" });
+    }
+  });
 
   // API endpoint for AI anime info correction and retrieval
   app.post("/api/anime/expand", async (req, res) => {
