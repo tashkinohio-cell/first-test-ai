@@ -206,15 +206,80 @@ export default function App() {
   const [loadingMessage, setLoadingMessage] = useState("");
   const [error, setError] = useState<string | null>(null);
   
+  // Cloud sync and loading states
+  const [isLoadedFromServer, setIsLoadedFromServer] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<"syncing" | "success" | "error" | "initial">("initial");
+
   // Extra interactions states
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [safeDeleteLock, setSafeDeleteLock] = useState<Record<string, boolean>>({});
   const [deleteConfirmationId, setDeleteConfirmationId] = useState<string | null>(null);
 
-  // Sync to local storage
+  // Fetch from cloud watchlist on mount
+  useEffect(() => {
+    const fetchCloudWatchlist = async () => {
+      try {
+        const res = await fetch("/api/anime/list");
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            setAnimeList(data);
+            setSyncStatus("success");
+          } else if (data && data.initialized === false) {
+            // First time ever loading, keep our localStorage state but mark as loaded to trigger initialization POST
+            setSyncStatus("success");
+          }
+        } else {
+          setSyncStatus("error");
+        }
+      } catch (e) {
+        console.error("Failed to load list from cloud server:", e);
+        setSyncStatus("error");
+      } finally {
+        setIsLoadedFromServer(true);
+      }
+    };
+    fetchCloudWatchlist();
+  }, []);
+
+  // Sync to local storage and Cloud Server repository
   useEffect(() => {
     localStorage.setItem("otaku_anime_list", JSON.stringify(animeList));
-  }, [animeList]);
+
+    if (isLoadedFromServer) {
+      const syncWithServer = async () => {
+        setIsSyncing(true);
+        setSyncStatus("syncing");
+        try {
+          const res = await fetch("/api/anime/list", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ list: animeList }),
+          });
+          if (res.ok) {
+            setSyncStatus("success");
+          } else {
+            setSyncStatus("error");
+          }
+        } catch (e) {
+          console.error("Cloud watch list synchronization error:", e);
+          setSyncStatus("error");
+        } finally {
+          setIsSyncing(false);
+        }
+      };
+
+      // Simple debounce/defer to avoid hammering backend on drag operations or rapid clicks
+      const handler = setTimeout(() => {
+        syncWithServer();
+      }, 500);
+
+      return () => clearTimeout(handler);
+    }
+  }, [animeList, isLoadedFromServer]);
 
   // Maintain activeSeason bounds on changing selected anime
   useEffect(() => {
@@ -541,9 +606,38 @@ Genres: ${anime.genres.join(", ")}
       {/* Brand Header & Top Stats Pill */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6 mb-8 mt-4">
         <div>
-          <div className="flex items-center gap-2 mb-1.5">
-            <span className="w-2 h-2 bg-[#66FCF1] rounded-full animate-ping"></span>
-            <span className="text-[10px] font-mono font-bold tracking-wider text-[#66FCF1]/80 uppercase">Google Gemini 3.5 Active</span>
+          <div className="flex flex-wrap items-center gap-3 mb-1.5">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 bg-[#66FCF1] rounded-full animate-ping"></span>
+              <span className="text-[10px] font-mono font-bold tracking-wider text-[#66FCF1]/80 uppercase">Google Gemini 3.5 Active</span>
+            </div>
+            <div className="h-3 w-[1px] bg-neutral-800 hidden sm:block"></div>
+            <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold tracking-wider uppercase">
+              {syncStatus === "syncing" && (
+                <>
+                  <span className="w-1.5 h-1.5 bg-[#8B5CF6] rounded-full animate-pulse"></span>
+                  <span className="text-purple-400">Syncing with Cloud</span>
+                </>
+              )}
+              {syncStatus === "success" && (
+                <>
+                  <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
+                  <span className="text-emerald-400">Synced to Cloud</span>
+                </>
+              )}
+              {syncStatus === "error" && (
+                <>
+                  <span className="w-1.5 h-1.5 bg-rose-500 rounded-full animate-bounce"></span>
+                  <span className="text-rose-400">Offline / Sync Error</span>
+                </>
+              )}
+              {syncStatus === "initial" && (
+                <>
+                  <span className="w-1.5 h-1.5 bg-slate-500 rounded-full animate-pulse"></span>
+                  <span className="text-slate-400">Cloud Connecting</span>
+                </>
+              )}
+            </div>
           </div>
           <h1 className="text-4xl sm:text-5xl font-black tracking-wide text-white select-none drop-shadow-[0_2px_12px_rgba(255,255,255,0.25)] uppercase font-sans">
             KIZUNA<span className="text-[#66FCF1]/40">.</span>LIST
