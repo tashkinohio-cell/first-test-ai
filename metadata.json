@@ -1,0 +1,6 @@
+{
+  "name": "Anime To-Do List",
+  "description": "An AI-managed anime watchlist and to-do tracker with season, ranking, and episode checklists.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
